@@ -29,3 +29,5 @@ from .dark_energy import DarkEnergyFluid, DarkEnergyPPF
 from .initialpower import InitialPowerLaw, SplinedInitialPower
 from .mathutils import threej
 from ._config import config
+
+print("this is the ormorod/mymain branch of CAMB")
