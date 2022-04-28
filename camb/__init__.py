@@ -30,4 +30,4 @@ from .initialpower import InitialPowerLaw, SplinedInitialPower
 from .mathutils import threej
 from ._config import config
 
-print("this is the ormorod/mymain branch of CAMB")
+print("this is the ormorod/debug-flags branch of CAMB")
