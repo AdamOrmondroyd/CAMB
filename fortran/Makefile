@@ -55,7 +55,8 @@ COMMON_FFLAGS = -fpp -openmp
 endif
 COMMON_FFLAGS += -gen-dep=$$*.d
 
-FFLAGS = -fp-model precise -W0 -WB $(COMMON_FFLAGS)
+# FFLAGS = -fp-model precise -W0 -WB $(COMMON_FFLAGS)
+FFLAGS =  -g -check all -check noarg_temp_created -traceback -fpe0 $(COMMON_FFLAGS)
 DEBUGFLAGS =  -g -check all -check noarg_temp_created -traceback -fpe0 $(COMMON_FFLAGS)
 
 ifeq ($(shell uname -s),Darwin)
