@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools", "packaging", "wheel"]
+requires = ["setuptools", "packaging", "wheel", "setuptools_scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -44,5 +44,5 @@ Source = "https://github.com/cmbant/camb"
 Tracker = "https://github.com/cmbant/camb/issues"
 Licensing = "https://github.com/cmbant/camb/blob/master/LICENCE.txt"
 
-[tool.setuptools.dynamic]
-version = { attr = "camb.__version__" }
+[tool.setuptools_scm]
+version_file = "camb/_version.py"
