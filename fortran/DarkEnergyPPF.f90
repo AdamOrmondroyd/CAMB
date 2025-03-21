@@ -75,11 +75,11 @@
     end subroutine setcgammappf
 
 
-    function TDarkEnergyPPF_diff_rhopi_Add_Term(this, dgrhoe, dgqe, grho, gpres, w,  grhok, adotoa, &
+    function TDarkEnergyPPF_diff_rhopi_Add_Term(this, dgrhoe, dgqe, grho, gpres, w, Pgrhova2, grhok, adotoa, &
         Kf1, k, grhov_t, z, k2, yprime, y, w_ix) result(ppiedot)
     !Get derivative of anisotropic stress
     class(TDarkEnergyPPF), intent(in) :: this
-    real(dl), intent(in) :: dgrhoe, dgqe, grho, gpres, w, grhok, adotoa, &
+    real(dl), intent(in) :: dgrhoe, dgqe, grho, gpres, w, Pgrhova2, grhok, adotoa, &
         k, grhov_t, z, k2, yprime(:), y(:), Kf1
     integer, intent(in) :: w_ix
     real(dl) :: ppiedot, hdotoh
@@ -99,10 +99,10 @@
 
 
     subroutine TDarkEnergyPPF_PerturbedStressEnergy(this, dgrhoe, dgqe, &
-        a, dgq, dgrho, grho, grhov_t, w, gpres_noDE, etak, adotoa, k, kf1, ay, ayprime, w_ix)
+        a, dgq, dgrho, grho, grhov_t, w, Pgrhova2, gpres_noDE, etak, adotoa, k, kf1, ay, ayprime, w_ix)
     class(TDarkEnergyPPF), intent(inout) :: this
     real(dl), intent(out) :: dgrhoe, dgqe
-    real(dl), intent(in) ::  a, dgq, dgrho, grho, grhov_t, w, gpres_noDE, etak, adotoa, k, kf1
+    real(dl), intent(in) ::  a, dgq, dgrho, grho, grhov_t, w, Pgrhova2, gpres_noDE, etak, adotoa, k, kf1
     real(dl), intent(in) :: ay(*)
     real(dl), intent(inout) :: ayprime(*)
     integer, intent(in) :: w_ix

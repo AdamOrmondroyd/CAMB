@@ -63,6 +63,7 @@
     use RangeUtils
     use constants
     use DarkEnergyInterface
+    use DarkEnergyPressure
     use MathUtils
     implicit none
     private

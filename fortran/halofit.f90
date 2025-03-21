@@ -48,6 +48,7 @@
     module NonLinear
     use results
     use DarkEnergyInterface
+    use DarkEnergyPressure
     use classes
     use Transfer
     use constants

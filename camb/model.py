@@ -8,7 +8,7 @@ from . import recombination as recomb
 from . import constants
 from .initialpower import InitialPower, SplinedInitialPower
 from .nonlinear import NonLinearModel
-from .dark_energy import DarkEnergyModel, DarkEnergyEqnOfState
+from .dark_energy import DarkEnergyModel, DarkEnergyEqnOfState, DarkEnergyPressure
 from .recombination import RecombinationModel
 from .reionization import ReionizationModel
 from .sources import SourceWindow
@@ -638,6 +638,22 @@ class CAMBparams(F2003Class):
         # Note that assigning to allocatable fields makes deep copies of the object
         self.DarkEnergy.set_w_a_table(a, w)
         return self
+
+    def set_dark_energy_rho_p_a(self, a_rho, rho, a_p, p, dark_energy_model='pressureppf'):
+        """
+        Set the dark energy density and pressure from tabulated values (which are cubic spline interpolated).
+
+        :param a: array of sampled a = 1/(1+z) values
+        :param rho: array of rho(a)
+        :param p: array of p(a)
+        :return: self
+        """
+
+        self.DarkEnergy = self.make_class_named(dark_energy_model, DarkEnergyPressure)
+        self.DarkEnergy.set_P_a_table(a_p, p)
+        self.DarkEnergy.set_rho_a_table(a_rho, rho)
+        return self
+
 
     def get_zre(self):
         return self.Reion.get_zre(self)

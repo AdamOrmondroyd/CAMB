@@ -4,6 +4,7 @@
     function dtauda(this,a)
     use results
     use DarkEnergyInterface
+    use DarkEnergyPressure
     implicit none
     class(CAMBdata) :: this
     real(dl), intent(in) :: a
@@ -31,6 +32,7 @@
     use results
     use MassiveNu
     use DarkEnergyInterface
+    use DarkEnergyPressure
     use Transfer
     implicit none
     public
@@ -67,6 +69,8 @@
         real(dl) q, q2
         real(dl) k_buf,k2_buf ! set in initial
         logical :: is_cosmological_constant
+        logical :: is_no_mod_w
+        logical :: is_no_mod_P
 
         integer w_ix !Index of two quintessence equations
         integer Tg_ix !index of matter temerature perturbation
@@ -302,6 +306,14 @@
     next_switch = min(tau_switch_ktau, tau_switch_nu_massless,EV%TightSwitchoffTime, tau_switch_nu_massive, &
         tau_switch_no_nu_multpoles, tau_switch_no_phot_multpoles, tau_switch_nu_nonrel, noSwitch, &
         tau_switch_saha, tau_switch_evolve_TM)
+    if (tauend > max( &
+        tau_switch_ktau, tau_switch_nu_massless, EV%TightSwitchoffTime, tau_switch_nu_massive, &
+        tau_switch_no_nu_multpoles, tau_switch_no_phot_multpoles, tau_switch_nu_nonrel, noSwitch, &
+        tau_switch_saha, tau_switch_evolve_TM)) then
+        print *, "tauend larger than all switch error encountered"
+        call GlobalError('tauend larger than all switch', error_evolution)
+        return
+    end if
 
     if (next_switch < tauend) then
         if (next_switch > tau+smallTime) then
@@ -2156,6 +2168,8 @@
 
     real(dl) dgq,grhob_t,grhor_t,grhoc_t,grhog_t,grhov_t,grhonu_t,sigma,polter
     real(dl) w_dark_energy_t !equation of state of dark energy
+    real(dl) P_dark_energy_t !pressure of dark energy
+    real(dl) Pgrhova2
     real(dl) gpres_noDE !Pressure with matter and radiation, no dark energy
     real(dl) qgdot,qrdot,pigdot,pirdot,vbdot,dgrho,adotoa
     real(dl) a,a2,z,clxc,clxb,vb,clxg,qg,pig,clxr,qr,pir
@@ -2207,8 +2221,11 @@
     if (EV%is_cosmological_constant) then
         grhov_t = State%grhov * a2
         w_dark_energy_t = -1_dl
+        P_dark_energy_t = -1_dl
+        Pgrhova2 = P_dark_energy_t * State%grhov * a2
     else
-        call State%CP%DarkEnergy%BackgroundDensityAndPressure(State%grhov, a, grhov_t, w_dark_energy_t)
+        call State%CP%DarkEnergy%BackgroundDensityAndPressure(State%grhov, a, grhov_t, w_dark_energy_t, P_dark_energy_t)
+        Pgrhova2 = P_dark_energy_t * State%grhov * a2
     end if
 
     !total perturbations: matter terms first, then add massive nu, de and radiation
@@ -2283,7 +2300,7 @@
 
     if (.not. EV%is_cosmological_constant) then
         call State%CP%DarkEnergy%PerturbedStressEnergy(dgrho_de, dgq_de, &
-            a, dgq, dgrho, grho, grhov_t, w_dark_energy_t, gpres_noDE, etak, &
+            a, dgq, dgrho, grho, grhov_t, w_dark_energy_t, Pgrhova2, gpres_noDE, etak, &
             adotoa, k, EV%Kf(1), ay, ayprime, EV%w_ix)
         dgrho = dgrho + dgrho_de
         dgq = dgq + dgq_de
@@ -2350,7 +2367,7 @@
 
     if (EV%TightCoupling) then
         !  ddota/a
-        gpres = gpres_noDE + w_dark_energy_t*grhov_t
+        gpres = gpres_noDE + Pgrhova2
         adotdota=(adotoa*adotoa-gpres)/2
 
         pig = 32._dl/45/opacity*k*(sigma+vb)
@@ -2685,10 +2702,10 @@
             call MassiveNuVarsOut(EV,ay,ayprime,a, adotoa, dgpi=dgpi, clxnu_all=clxnu, &
                 dgpi_diff=dgpi_diff, pidot_sum=pidot_sum)
         end if
-        gpres = gpres_noDE + w_dark_energy_t*grhov_t
+        gpres = gpres_noDE + Pgrhova2
         diff_rhopi = pidot_sum - (4*dgpi+ dgpi_diff)*adotoa + &
             State%CP%DarkEnergy%diff_rhopi_Add_Term(dgrho_de, dgq_de, grho, &
-            gpres, w_dark_energy_t, State%grhok, adotoa, &
+            gpres, w_dark_energy_t, Pgrhova2, State%grhok, adotoa, &
             EV%kf(1), k, grhov_t, z, k2, ayprime, ay, EV%w_ix)
         phi = -((dgrho +3*dgq*adotoa/k)/EV%Kf(1) + dgpi)/(2*k2)
 
@@ -2787,6 +2804,8 @@
                 select type(DE=>State%CP%DarkEnergy)
                 class is (TDarkEnergyEqnOfState)
                     cs2_de = DE%cs2_lam
+                class is (TDarkEnergyDensityAndPressure)
+                    cs2_de = DE%cs2_lam
                 class default
                     cs2_de=1
                 end select
@@ -2828,6 +2847,8 @@
     real(dl) k,k2,a,a2, adotdota
     real(dl) pir,adotoa
     real(dl) w_dark_energy_t
+    real(dl) P_dark_energy_t
+    real(dl) Pgrhova2
 
     k2=EV%k2_buf
     k=EV%k_buf
@@ -2865,10 +2886,10 @@
     grhoc_t=State%grhoc/a
     grhor_t=State%grhornomass/a2
     grhog_t=State%grhog/a2
-    call CP%DarkEnergy%BackgroundDensityAndPressure(State%grhov, a, grhov_t, w_dark_energy_t)
+    call CP%DarkEnergy%BackgroundDensityAndPressure(State%grhov, a, grhov_t, w_dark_energy_t, P_dark_energy_t)
 
     grho=grhob_t+grhoc_t+grhor_t+grhog_t+grhov_t
-    gpres=(grhog_t+grhor_t)/3._dl+grhov_t*w_dark_energy_t
+    gpres=(grhog_t+grhor_t)/3._dl+ Pgrhova2
 
     adotoa=sqrt(grho/3._dl)
     adotdota=(adotoa*adotoa-gpres)/2

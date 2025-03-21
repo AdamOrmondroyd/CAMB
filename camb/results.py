@@ -211,7 +211,7 @@ class CAMBdata(F2003Class):
                  ('sound_horizon_zArr', [numpy_1d, numpy_1d, int_arg]),
                  ('RedshiftAtTimeArr', [numpy_1d, numpy_1d, int_arg]),
                  ('CosmomcTheta', [], c_double),
-                 ('DarkEnergyStressEnergy', [numpy_1d, numpy_1d, numpy_1d, int_arg]),
+                 ('DarkEnergyStressEnergy', [numpy_1d, numpy_1d, numpy_1d, numpy_1d, int_arg]),
                  ('get_lmax_lensed', [], c_int),
                  ('get_zstar', [d_arg], c_double),
                  ('SetParams', [POINTER(CAMBparams), int_arg, int_arg, int_arg, int_arg])
@@ -657,11 +657,12 @@ class CAMBdata(F2003Class):
             scales = np.ascontiguousarray(a)
         rho = np.zeros(scales.shape)
         w = np.zeros(scales.shape)
-        self.f_DarkEnergyStressEnergy(scales, rho, w, byref(c_int(len(scales))))
+        P = np.zeros(scales.shape)
+        self.f_DarkEnergyStressEnergy(scales, rho, w, P, byref(c_int(len(scales))))
         if scalar:
-            return rho[0], w[0]
+            return rho[0], w[0], P[0]
         else:
-            return rho, w
+            return rho, w, P
 
     def get_Omega(self, var, z=0):
         r"""

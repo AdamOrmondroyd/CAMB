@@ -96,10 +96,10 @@
 
 
     subroutine TDarkEnergyFluid_PerturbedStressEnergy(this, dgrhoe, dgqe, &
-        a, dgq, dgrho, grho, grhov_t, w, gpres_noDE, etak, adotoa, k, kf1, ay, ayprime, w_ix)
+        a, dgq, dgrho, grho, grhov_t, w, Pgrhova2, gpres_noDE, etak, adotoa, k, kf1, ay, ayprime, w_ix)
     class(TDarkEnergyFluid), intent(inout) :: this
     real(dl), intent(out) :: dgrhoe, dgqe
-    real(dl), intent(in) ::  a, dgq, dgrho, grho, grhov_t, w, gpres_noDE, etak, adotoa, k, kf1
+    real(dl), intent(in) ::  a, dgq, dgrho, grho, grhov_t, w, Pgrhova2, gpres_noDE, etak, adotoa, k, kf1
     real(dl), intent(in) :: ay(*)
     real(dl), intent(inout) :: ayprime(*)
     integer, intent(in) :: w_ix
@@ -190,6 +190,7 @@
     select type(State)
     class is (CAMBdata)
         this%is_cosmological_constant = this%fde_zc==0
+        this%is_no_mod_w = this%fde_zc==0
         this%pow = 3*(1+this%w_n)
         this%a_c = 1/(1+this%zc)
         this%acpow = this%a_c**this%pow
@@ -252,7 +253,7 @@
     real(dl), intent(inout) :: ayprime(:)
     real(dl), intent(in) :: a, adotoa, w, k, z, y(:)
     integer, intent(in) :: w_ix
-    real(dl) Hv3_over_k, deriv, apow, acpow, cs2, fac
+    real(dl) Hv3_over_k, loga, deriv, apow, acpow, cs2, fac
 
     if (this%w_n < 0.9999) then
         fac = 2*a**(2-6*this%w_n)*this%freq**2
@@ -277,10 +278,10 @@
 
 
     subroutine TAxionEffectiveFluid_PerturbedStressEnergy(this, dgrhoe, dgqe, &
-        a, dgq, dgrho, grho, grhov_t, w, gpres_noDE, etak, adotoa, k, kf1, ay, ayprime, w_ix)
+        a, dgq, dgrho, grho, grhov_t, w, Pgrhova2, gpres_noDE, etak, adotoa, k, kf1, ay, ayprime, w_ix)
     class(TAxionEffectiveFluid), intent(inout) :: this
     real(dl), intent(out) :: dgrhoe, dgqe
-    real(dl), intent(in) :: a, dgq, dgrho, grho, grhov_t, w, gpres_noDE, etak, adotoa, k, kf1
+    real(dl), intent(in) :: a, dgq, dgrho, grho, grhov_t, w, Pgrhova2, gpres_noDE, etak, adotoa, k, kf1
     real(dl), intent(in) :: ay(*)
     real(dl), intent(inout) :: ayprime(*)
     integer, intent(in) :: w_ix

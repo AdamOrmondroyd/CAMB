@@ -130,12 +130,12 @@
 
     end subroutine  TQuintessence_Init
 
-    subroutine TQuintessence_BackgroundDensityAndPressure(this, grhov, a, grhov_t, w)
+    subroutine TQuintessence_BackgroundDensityAndPressure(this, grhov, a, grhov_t, w, P)
     !Get grhov_t = 8*pi*rho_de*a**2 and (optionally) equation of state at scale factor a
     class(TQuintessence), intent(inout) :: this
     real(dl), intent(in) :: grhov, a
     real(dl), intent(out) :: grhov_t
-    real(dl), optional, intent(out) :: w
+    real(dl), optional, intent(out) :: w, P
     real(dl) V, a2, grhov_lambda, phi, phidot
 
     if (this%is_cosmological_constant) then
@@ -235,11 +235,11 @@
     end subroutine ValsAta
 
     subroutine TQuintessence_PerturbedStressEnergy(this, dgrhoe, dgqe, &
-        a, dgq, dgrho, grho, grhov_t, w, gpres_noDE, etak, adotoa, k, kf1, ay, ayprime, w_ix)
+        a, dgq, dgrho, grho, grhov_t, w, Pgrhova2, gpres_noDE, etak, adotoa, k, kf1, ay, ayprime, w_ix)
     !Get density perturbation and heat flux
     class(TQuintessence), intent(inout) :: this
     real(dl), intent(out) :: dgrhoe, dgqe
-    real(dl), intent(in) ::  a, dgq, dgrho, grho, grhov_t, w, gpres_noDE, etak, adotoa, k, kf1
+    real(dl), intent(in) ::  a, dgq, dgrho, grho, grhov_t, w, Pgrhova2, gpres_noDE, etak, adotoa, k, kf1
     real(dl), intent(in) :: ay(*)
     real(dl), intent(inout) :: ayprime(*)
     integer, intent(in) :: w_ix

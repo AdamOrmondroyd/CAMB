@@ -6,6 +6,7 @@
     use iso_c_binding
     use DarkEnergyFluid
     use DarkEnergyPPF
+    use DarkEnergyPressurePPF
     use ObjectLists
     use classes
     use Interpolation

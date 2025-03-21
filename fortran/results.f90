@@ -1053,15 +1053,15 @@
 
     end subroutine GetComputedPKRedshifts
 
-    subroutine CAMBdata_DarkEnergyStressEnergy(this, a, grhov_t, w, n)
+    subroutine CAMBdata_DarkEnergyStressEnergy(this, a, grhov_t, w, P, n)
     class(CAMBdata) :: this
     integer, intent(in) :: n
     real(dl), intent(in) :: a(n)
-    real(dl), intent(out) :: grhov_t(n), w(n)
+    real(dl), intent(out) :: grhov_t(n), w(n), P(n)
     integer i
 
     do i=1, n
-        call this%CP%DarkEnergy%BackgroundDensityAndPressure(1._dl, a(i), grhov_t(i), w(i))
+        call this%CP%DarkEnergy%BackgroundDensityAndPressure(1._dl, a(i), grhov_t(i), w(i), P(i))
     end do
     grhov_t = grhov_t/a**2
 
