@@ -250,22 +250,31 @@
         real(dl) :: integral
 
         ! Compute log(a^4 * rho_de / rho_de(a=1)) at each knot
-        this%knot_log_density(1) = 0.0_dl  ! Normalized to 1 at a=1
-
+        ! Following the pattern from TDarkEnergyEqnOfState_SetwTable
+        
+        ! The reference formula is: ln(a^4) - 3*int[1 to a] (1+w) d ln a
+        ! For our piecewise linear w(a), integrate segment by segment
+        
+        this%knot_log_density(1) = 0.0_dl  ! At a=1, this is 0 by definition
+        
         do i = 2, this%n_w
+            ! Integrate this segment from full_a(i-1) to full_a(i)
             call this%IntegrateSegment(this%full_a(i-1), this%full_a(i), &
                                       this%full_w(i-1), this%full_w(i), integral)
-            this%knot_log_density(i) = this%knot_log_density(i-1) + integral
+            
+            ! Accumulate: log(a^4 rho_de(a_i)) relative to log(a^4 rho_de(a=1))
+            this%knot_log_density(i) = this%knot_log_density(i-1) + integral + &
+                                       4.0_dl * log(this%full_a(i) / this%full_a(i-1))
         end do
 
     end subroutine ComputeDensityCache
 
-    function TDarkEnergyFK_grho_de(this, a) result(grho_de)
+    function TDarkEnergyFK_grho_de(this, a) result(grho_de)  !relative density (8 pi G a^4 rho_de /grhov)
         class(TDarkEnergyFK) :: this
         real(dl), intent(in) :: a
         real(dl) :: grho_de
         integer :: idx
-        real(dl) :: a1, a2, w1, w2, log_rho, extra_integral
+        real(dl) :: a1, a2, w1, w2, log_rho, extra_integral, w_at_a
 
         if (a == 0.0_dl) then
             grho_de = 0.0_dl
@@ -287,12 +296,15 @@
 
         if (idx == this%n_w) then
             ! Constant extrapolation beyond last knot
+            ! ln(a^4 rho) = ln(a_knot^4 rho_knot) + [4 - 3(1+w)] * ln(a/a_knot)
             log_rho = this%knot_log_density(this%n_w) + &
-                     (1.0_dl - 3.0_dl * this%full_w(this%n_w)) * log(a / this%full_a(this%n_w))
+                     (4.0_dl - 3.0_dl * (1.0_dl + this%full_w(this%n_w))) * log(a / this%full_a(this%n_w))
         else
             ! Linear interpolation within segment
-            call this%IntegrateSegment(a1, a, w1, w1 + (w2-w1)*(a-a1)/(a2-a1), extra_integral)
-            log_rho = this%knot_log_density(idx) + extra_integral
+            w_at_a = w1 + (w2-w1)*(a-a1)/(a2-a1)
+            call this%IntegrateSegment(a1, a, w1, w_at_a, extra_integral)
+            log_rho = this%knot_log_density(idx) + extra_integral + &
+                     4.0_dl * log(a / a1)
         end if
 
         grho_de = exp(log_rho)
