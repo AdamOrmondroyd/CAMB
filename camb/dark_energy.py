@@ -221,7 +221,7 @@ class EarlyQuintessence(Quintessence):
 
 
 @fortran_class
-class DarkEnergyFlexKnot(DarkEnergyModel):
+class DarkEnergyFK(DarkEnergyModel):
     """
     FlexKnot dark energy model using linear splines between nodes.
 
@@ -238,8 +238,8 @@ class DarkEnergyFlexKnot(DarkEnergyModel):
     linear, making w + wa(1-a) not an approximation but the exact form.
     """
 
-    _fortran_class_module_ = 'DarkEnergyFlexKnot'
-    _fortran_class_name_ = 'TDarkEnergyFlexKnot'
+    _fortran_class_module_ = 'DarkEnergyFK'
+    _fortran_class_name_ = 'TDarkEnergyFK'
 
     _fields_ = [
         ("__n_w", c_int, "number of w-values"),
@@ -333,4 +333,4 @@ class DarkEnergyFlexKnot(DarkEnergyModel):
 
 
 # short names for models that support w/wa
-F2003Class._class_names.update({'fluid': DarkEnergyFluid, 'ppf': DarkEnergyPPF, 'flexknot': DarkEnergyFlexKnot})
+F2003Class._class_names.update({'fluid': DarkEnergyFluid, 'ppf': DarkEnergyPPF, 'flexknot': DarkEnergyFK})

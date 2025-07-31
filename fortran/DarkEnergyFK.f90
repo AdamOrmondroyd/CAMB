@@ -1,4 +1,4 @@
-    module DarkEnergyFlexKnot
+    module DarkEnergyFK
     use precision
     use DarkEnergyInterface
     use classes
@@ -6,7 +6,7 @@
     
     private
     
-    type, extends(TDarkEnergyModel) :: TDarkEnergyFlexKnot
+    type, extends(TDarkEnergyModel) :: TDarkEnergyFK
         integer :: n_w = 1                           ! Number of w-values
         real(dl), allocatable :: w_values(:)         ! [w0, w1, ..., w_{n-1}]
         real(dl), allocatable :: a_knots(:)          ! [a1, a2, ..., a_{n-2}]
@@ -16,48 +16,48 @@
         real(dl), allocatable :: knot_log_density(:)
         logical :: initialized = .false.
     contains
-        procedure :: ReadParams => FlexKnot_ReadParams
-        procedure, nopass :: PythonClass => TDarkEnergyFlexKnot_PythonClass
-        procedure, nopass :: SelfPointer => TDarkEnergyFlexKnot_SelfPointer
-        procedure :: Init => FlexKnot_Init
-        procedure :: w_de => FlexKnot_w_de
-        procedure :: grho_de => FlexKnot_grho_de
-        procedure :: Effective_w_wa => FlexKnot_Effective_w_wa
-        procedure :: PrintFeedback => FlexKnot_PrintFeedback
-        procedure :: SetFlexKnots => TDarkEnergyFlexKnot_SetFlexKnots
-        procedure, private :: BuildFullKnots => FlexKnot_BuildFullKnots
-        procedure, private :: FindSegment => FlexKnot_FindSegment
-        procedure, private :: ComputeDensityCache => FlexKnot_ComputeDensityCache
-        procedure, private :: IntegrateSegment => FlexKnot_IntegrateSegment
-    end type TDarkEnergyFlexKnot
+        procedure :: ReadParams => TDarkEnergyFK_ReadParams
+        procedure :: Init => TDarkEnergyFK_Init
+        procedure :: w_de => TDarkEnergyFK_w_de
+        procedure :: grho_de => TDarkEnergyFK_grho_de
+        procedure :: Effective_w_wa => TDarkEnergyFK_Effective_w_wa
+        procedure :: PrintFeedback => TDarkEnergyFK_PrintFeedback
+        procedure :: SetFlexKnots => TDarkEnergyFK_SetFlexKnots
+        procedure, nopass :: PythonClass => TDarkEnergyFK_PythonClass
+        procedure, nopass :: SelfPointer => TDarkEnergyFK_SelfPointer
+        procedure, private :: BuildFullKnots
+        procedure, private :: FindSegment
+        procedure, private :: ComputeDensityCache
+        procedure, private :: IntegrateSegment
+    end type TDarkEnergyFK
     
-    public TDarkEnergyFlexKnot
+    public TDarkEnergyFK
     contains
 
-    subroutine FlexKnot_ReadParams(this, Ini)
+    subroutine TDarkEnergyFK_ReadParams(this, Ini)
         use IniObjects
-        class(TDarkEnergyFlexKnot) :: this
+        class(TDarkEnergyFK) :: this
         class(TIniFile), intent(in) :: Ini
         ! Implementation for reading from .ini files can be added here
         
-    end subroutine FlexKnot_ReadParams
+    end subroutine TDarkEnergyFK_ReadParams
     
-    function TDarkEnergyFlexKnot_PythonClass()
-        character(LEN=:), allocatable :: TDarkEnergyFlexKnot_PythonClass
-        TDarkEnergyFlexKnot_PythonClass = 'DarkEnergyFlexKnot'
-    end function TDarkEnergyFlexKnot_PythonClass
+    function TDarkEnergyFK_PythonClass()
+        character(LEN=:), allocatable :: TDarkEnergyFK_PythonClass
+        TDarkEnergyFK_PythonClass = 'DarkEnergyFK'
+    end function TDarkEnergyFK_PythonClass
     
-    subroutine TDarkEnergyFlexKnot_SelfPointer(cptr, P)
+    subroutine TDarkEnergyFK_SelfPointer(cptr, P)
         use iso_c_binding
         Type(c_ptr) :: cptr
-        Type(TDarkEnergyFlexKnot), pointer :: PType
+        Type(TDarkEnergyFK), pointer :: PType
         class(TPythonInterfacedClass), pointer :: P
         call c_f_pointer(cptr, PType)
         P => PType
-    end subroutine TDarkEnergyFlexKnot_SelfPointer
+    end subroutine TDarkEnergyFK_SelfPointer
     
-    subroutine FlexKnot_Init(this, State)
-        class(TDarkEnergyFlexKnot), intent(inout) :: this
+    subroutine TDarkEnergyFK_Init(this, State)
+        class(TDarkEnergyFK), intent(inout) :: this
         class(TCAMBdata), intent(in), target :: State
         
         if (.not. this%initialized) then
@@ -65,10 +65,10 @@
             call this%SetFlexKnots(1, [-1.0_dl], [0.0_dl])
         end if
         
-    end subroutine FlexKnot_Init
+    end subroutine TDarkEnergyFK_Init
     
-    subroutine TDarkEnergyFlexKnot_SetFlexKnots(this, n_w, w_values, a_knots)
-        class(TDarkEnergyFlexKnot), intent(inout) :: this
+    subroutine TDarkEnergyFK_SetFlexKnots(this, n_w, w_values, a_knots)
+        class(TDarkEnergyFK), intent(inout) :: this
         integer, intent(in) :: n_w
         real(dl), intent(in) :: w_values(n_w)
         real(dl), intent(in) :: a_knots(*)  ! Assumed size to handle n_w=1 case
@@ -112,10 +112,10 @@
         this%is_cosmological_constant = (n_w == 1 .and. abs(w_values(1) + 1.0_dl) < 1e-6_dl)
         this%initialized = .true.
         
-    end subroutine TDarkEnergyFlexKnot_SetFlexKnots
+    end subroutine TDarkEnergyFK_SetFlexKnots
     
-    subroutine FlexKnot_BuildFullKnots(this)
-        class(TDarkEnergyFlexKnot), intent(inout) :: this
+    subroutine BuildFullKnots(this)
+        class(TDarkEnergyFK), intent(inout) :: this
         integer :: i
         
         ! Allocate full knot arrays
@@ -141,10 +141,10 @@
         this%full_a(this%n_w) = this%a_min         ! Early time
         this%full_w(this%n_w) = this%w_values(this%n_w)  ! w_{n-1}
         
-    end subroutine FlexKnot_BuildFullKnots
+    end subroutine BuildFullKnots
     
-    subroutine FlexKnot_FindSegment(this, a, idx, a1, a2, w1, w2)
-        class(TDarkEnergyFlexKnot), intent(in) :: this
+    subroutine FindSegment(this, a, idx, a1, a2, w1, w2)
+        class(TDarkEnergyFK), intent(in) :: this
         real(dl), intent(in) :: a
         integer, intent(out) :: idx
         real(dl), intent(out) :: a1, a2, w1, w2
@@ -172,10 +172,10 @@
             w2 = this%full_w(idx+1)
         end if
         
-    end subroutine FlexKnot_FindSegment
+    end subroutine FindSegment
     
-    function FlexKnot_w_de(this, a) result(w)
-        class(TDarkEnergyFlexKnot) :: this
+    function TDarkEnergyFK_w_de(this, a) result(w)
+        class(TDarkEnergyFK) :: this
         real(dl), intent(in) :: a
         real(dl) :: w
         integer :: idx
@@ -194,10 +194,10 @@
             w = w1 + (w2 - w1) * (a - a1) / (a2 - a1)  ! Linear interpolation
         end if
         
-    end function FlexKnot_w_de
+    end function TDarkEnergyFK_w_de
     
-    subroutine FlexKnot_Effective_w_wa(this, w, wa)
-        class(TDarkEnergyFlexKnot), intent(inout) :: this
+    subroutine TDarkEnergyFK_Effective_w_wa(this, w, wa)
+        class(TDarkEnergyFK), intent(inout) :: this
         real(dl), intent(out) :: w, wa
         integer :: idx
         real(dl) :: a1, a2, w1, w2, slope
@@ -221,10 +221,10 @@
             wa = -slope                     ! dw/d(1-a) = -dw/da
         end if
         
-    end subroutine FlexKnot_Effective_w_wa
+    end subroutine TDarkEnergyFK_Effective_w_wa
     
-    subroutine FlexKnot_IntegrateSegment(this, a_start, a_end, w_start, w_end, integral)
-        class(TDarkEnergyFlexKnot), intent(in) :: this
+    subroutine IntegrateSegment(this, a_start, a_end, w_start, w_end, integral)
+        class(TDarkEnergyFK), intent(in) :: this
         real(dl), intent(in) :: a_start, a_end, w_start, w_end
         real(dl), intent(out) :: integral
         real(dl) :: slope, log_ratio
@@ -242,10 +242,10 @@
         integral = -3.0_dl * ((1.0_dl + w_start) * log_ratio + &
                              slope * (a_end - a_start - a_start * log_ratio))
         
-    end subroutine FlexKnot_IntegrateSegment
+    end subroutine IntegrateSegment
     
-    subroutine FlexKnot_ComputeDensityCache(this)
-        class(TDarkEnergyFlexKnot), intent(inout) :: this
+    subroutine ComputeDensityCache(this)
+        class(TDarkEnergyFK), intent(inout) :: this
         integer :: i
         real(dl) :: integral
         
@@ -258,10 +258,10 @@
             this%knot_log_density(i) = this%knot_log_density(i-1) + integral
         end do
         
-    end subroutine FlexKnot_ComputeDensityCache
+    end subroutine ComputeDensityCache
     
-    function FlexKnot_grho_de(this, a) result(grho_de)
-        class(TDarkEnergyFlexKnot) :: this
+    function TDarkEnergyFK_grho_de(this, a) result(grho_de)
+        class(TDarkEnergyFK) :: this
         real(dl), intent(in) :: a
         real(dl) :: grho_de
         integer :: idx
@@ -297,10 +297,10 @@
         
         grho_de = exp(log_rho)
         
-    end function FlexKnot_grho_de
+    end function TDarkEnergyFK_grho_de
     
-    subroutine FlexKnot_PrintFeedback(this, FeedbackLevel)
-        class(TDarkEnergyFlexKnot) :: this
+    subroutine TDarkEnergyFK_PrintFeedback(this, FeedbackLevel)
+        class(TDarkEnergyFK) :: this
         integer, intent(in) :: FeedbackLevel
         integer :: i
         
@@ -316,6 +316,6 @@
             end do
         end if
         
-    end subroutine FlexKnot_PrintFeedback
+    end subroutine TDarkEnergyFK_PrintFeedback
     
-    end module DarkEnergyFlexKnot
+    end module DarkEnergyFK
