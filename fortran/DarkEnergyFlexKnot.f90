@@ -1,0 +1,321 @@
+    module DarkEnergyFlexKnot
+    use precision
+    use DarkEnergyInterface
+    use classes
+    implicit none
+    
+    private
+    
+    type, extends(TDarkEnergyModel) :: TDarkEnergyFlexKnot
+        integer :: n_w = 1                           ! Number of w-values
+        real(dl), allocatable :: w_values(:)         ! [w0, w1, ..., w_{n-1}]
+        real(dl), allocatable :: a_knots(:)          ! [a1, a2, ..., a_{n-2}]
+        real(dl) :: a_min = 1.0e-8_dl                ! Minimum scale factor
+        ! Internal full knot arrays (computed from inputs)
+        real(dl), allocatable :: full_a(:), full_w(:)
+        real(dl), allocatable :: knot_log_density(:)
+        logical :: initialized = .false.
+    contains
+        procedure :: ReadParams => FlexKnot_ReadParams
+        procedure, nopass :: PythonClass => TDarkEnergyFlexKnot_PythonClass
+        procedure, nopass :: SelfPointer => TDarkEnergyFlexKnot_SelfPointer
+        procedure :: Init => FlexKnot_Init
+        procedure :: w_de => FlexKnot_w_de
+        procedure :: grho_de => FlexKnot_grho_de
+        procedure :: Effective_w_wa => FlexKnot_Effective_w_wa
+        procedure :: PrintFeedback => FlexKnot_PrintFeedback
+        procedure :: SetFlexKnots => TDarkEnergyFlexKnot_SetFlexKnots
+        procedure, private :: BuildFullKnots => FlexKnot_BuildFullKnots
+        procedure, private :: FindSegment => FlexKnot_FindSegment
+        procedure, private :: ComputeDensityCache => FlexKnot_ComputeDensityCache
+        procedure, private :: IntegrateSegment => FlexKnot_IntegrateSegment
+    end type TDarkEnergyFlexKnot
+    
+    public TDarkEnergyFlexKnot
+    contains
+
+    subroutine FlexKnot_ReadParams(this, Ini)
+        use IniObjects
+        class(TDarkEnergyFlexKnot) :: this
+        class(TIniFile), intent(in) :: Ini
+        ! Implementation for reading from .ini files can be added here
+        
+    end subroutine FlexKnot_ReadParams
+    
+    function TDarkEnergyFlexKnot_PythonClass()
+        character(LEN=:), allocatable :: TDarkEnergyFlexKnot_PythonClass
+        TDarkEnergyFlexKnot_PythonClass = 'DarkEnergyFlexKnot'
+    end function TDarkEnergyFlexKnot_PythonClass
+    
+    subroutine TDarkEnergyFlexKnot_SelfPointer(cptr, P)
+        use iso_c_binding
+        Type(c_ptr) :: cptr
+        Type(TDarkEnergyFlexKnot), pointer :: PType
+        class(TPythonInterfacedClass), pointer :: P
+        call c_f_pointer(cptr, PType)
+        P => PType
+    end subroutine TDarkEnergyFlexKnot_SelfPointer
+    
+    subroutine FlexKnot_Init(this, State)
+        class(TDarkEnergyFlexKnot), intent(inout) :: this
+        class(TCAMBdata), intent(in), target :: State
+        
+        if (.not. this%initialized) then
+            ! Default: cosmological constant
+            call this%SetFlexKnots(1, [-1.0_dl], [0.0_dl])
+        end if
+        
+    end subroutine FlexKnot_Init
+    
+    subroutine TDarkEnergyFlexKnot_SetFlexKnots(this, n_w, w_values, a_knots)
+        class(TDarkEnergyFlexKnot), intent(inout) :: this
+        integer, intent(in) :: n_w
+        real(dl), intent(in) :: w_values(n_w)
+        real(dl), intent(in) :: a_knots(*)  ! Assumed size to handle n_w=1 case
+        integer :: i
+        
+        ! Input validation
+        if (n_w < 1) then
+            error stop 'FlexKnot: n_w must be >= 1'
+        end if
+        
+        this%n_w = n_w
+        
+        ! Allocate arrays safely
+        if (allocated(this%w_values)) deallocate(this%w_values)
+        if (allocated(this%a_knots)) deallocate(this%a_knots)
+        
+        allocate(this%w_values(n_w))
+        this%w_values = w_values
+        
+        if (n_w > 2) then
+            allocate(this%a_knots(n_w-2))
+            do i = 1, n_w-2
+                this%a_knots(i) = a_knots(i)
+            end do
+            
+            ! Validate: a_knots should be decreasing and in (0,1)
+            if (n_w > 3) then
+                do i = 1, n_w-3
+                    if (this%a_knots(i) <= this%a_knots(i+1)) then
+                        error stop 'FlexKnot: a_knots must be in decreasing order'
+                    end if
+                end do
+            end if
+            
+            if (this%a_knots(1) >= 1.0_dl .or. this%a_knots(n_w-2) <= this%a_min) then
+                error stop 'FlexKnot: a_knots must be in range (a_min, 1.0)'
+            end if
+        end if
+        
+        call this%BuildFullKnots()
+        this%is_cosmological_constant = (n_w == 1 .and. abs(w_values(1) + 1.0_dl) < 1e-6_dl)
+        this%initialized = .true.
+        
+    end subroutine TDarkEnergyFlexKnot_SetFlexKnots
+    
+    subroutine FlexKnot_BuildFullKnots(this)
+        class(TDarkEnergyFlexKnot), intent(inout) :: this
+        integer :: i
+        
+        ! Allocate full knot arrays
+        if (allocated(this%full_a)) deallocate(this%full_a)
+        if (allocated(this%full_w)) deallocate(this%full_w)
+        if (allocated(this%knot_log_density)) deallocate(this%knot_log_density)
+        
+        allocate(this%full_a(this%n_w), this%full_w(this%n_w))
+        allocate(this%knot_log_density(this%n_w))
+        
+        ! Build full knot arrays
+        this%full_a(1) = 1.0_dl                    ! Today
+        this%full_w(1) = this%w_values(1)          ! w0
+        
+        if (this%n_w > 2) then
+            ! Interior knots
+            do i = 1, this%n_w-2
+                this%full_a(i+1) = this%a_knots(i)
+                this%full_w(i+1) = this%w_values(i+1)
+            end do
+        end if
+        
+        this%full_a(this%n_w) = this%a_min         ! Early time
+        this%full_w(this%n_w) = this%w_values(this%n_w)  ! w_{n-1}
+        
+    end subroutine FlexKnot_BuildFullKnots
+    
+    subroutine FlexKnot_FindSegment(this, a, idx, a1, a2, w1, w2)
+        class(TDarkEnergyFlexKnot), intent(in) :: this
+        real(dl), intent(in) :: a
+        integer, intent(out) :: idx
+        real(dl), intent(out) :: a1, a2, w1, w2
+        integer :: i
+        
+        ! Find segment (full_a is in decreasing order)
+        idx = this%n_w  ! Default to last segment
+        do i = 1, this%n_w - 1
+            if (a >= this%full_a(i+1)) then
+                idx = i
+                exit
+            end if
+        end do
+        
+        if (idx == this%n_w) then
+            ! Extrapolate with constant w at early times
+            a1 = this%full_a(this%n_w)
+            a2 = this%full_a(this%n_w)
+            w1 = this%full_w(this%n_w)
+            w2 = this%full_w(this%n_w)
+        else
+            a1 = this%full_a(idx)
+            a2 = this%full_a(idx+1)
+            w1 = this%full_w(idx)
+            w2 = this%full_w(idx+1)
+        end if
+        
+    end subroutine FlexKnot_FindSegment
+    
+    function FlexKnot_w_de(this, a) result(w)
+        class(TDarkEnergyFlexKnot) :: this
+        real(dl), intent(in) :: a
+        real(dl) :: w
+        integer :: idx
+        real(dl) :: a1, a2, w1, w2
+        
+        if (.not. this%initialized) then
+            w = -1.0_dl
+            return
+        end if
+        
+        call this%FindSegment(a, idx, a1, a2, w1, w2)
+        
+        if (abs(a2 - a1) < 1e-15_dl) then
+            w = w1  ! Constant segment
+        else
+            w = w1 + (w2 - w1) * (a - a1) / (a2 - a1)  ! Linear interpolation
+        end if
+        
+    end function FlexKnot_w_de
+    
+    subroutine FlexKnot_Effective_w_wa(this, w, wa)
+        class(TDarkEnergyFlexKnot), intent(inout) :: this
+        real(dl), intent(out) :: w, wa
+        integer :: idx
+        real(dl) :: a1, a2, w1, w2, slope
+        
+        if (.not. this%initialized) then
+            w = -1.0_dl
+            wa = 0.0_dl
+            return
+        end if
+        
+        ! Find segment containing a=1.0 (today)
+        call this%FindSegment(1.0_dl, idx, a1, a2, w1, w2)
+        
+        if (abs(a2 - a1) < 1e-15_dl) then
+            w = w1
+            wa = 0.0_dl
+        else
+            ! Convert w(a) = w1 + slope*(a-a1) to w + wa*(1-a) form
+            slope = (w2 - w1) / (a2 - a1)
+            w = w1 + slope * (1.0_dl - a1)  ! Value at a=1
+            wa = -slope                     ! dw/d(1-a) = -dw/da
+        end if
+        
+    end subroutine FlexKnot_Effective_w_wa
+    
+    subroutine FlexKnot_IntegrateSegment(this, a_start, a_end, w_start, w_end, integral)
+        class(TDarkEnergyFlexKnot), intent(in) :: this
+        real(dl), intent(in) :: a_start, a_end, w_start, w_end
+        real(dl), intent(out) :: integral
+        real(dl) :: slope, log_ratio
+        
+        if (abs(a_end - a_start) < 1e-15_dl) then
+            integral = 0.0_dl
+            return
+        end if
+        
+        slope = (w_end - w_start) / (a_end - a_start)
+        log_ratio = log(a_end / a_start)
+        
+        ! Analytical integral of -3 * ∫[(1+w(a))/a] da
+        ! where w(a) = w_start + slope*(a - a_start)
+        integral = -3.0_dl * ((1.0_dl + w_start) * log_ratio + &
+                             slope * (a_end - a_start - a_start * log_ratio))
+        
+    end subroutine FlexKnot_IntegrateSegment
+    
+    subroutine FlexKnot_ComputeDensityCache(this)
+        class(TDarkEnergyFlexKnot), intent(inout) :: this
+        integer :: i
+        real(dl) :: integral
+        
+        ! Compute log(a^4 * rho_de / rho_de(a=1)) at each knot
+        this%knot_log_density(1) = 0.0_dl  ! Normalized to 1 at a=1
+        
+        do i = 2, this%n_w
+            call this%IntegrateSegment(this%full_a(i-1), this%full_a(i), &
+                                      this%full_w(i-1), this%full_w(i), integral)
+            this%knot_log_density(i) = this%knot_log_density(i-1) + integral
+        end do
+        
+    end subroutine FlexKnot_ComputeDensityCache
+    
+    function FlexKnot_grho_de(this, a) result(grho_de)
+        class(TDarkEnergyFlexKnot) :: this
+        real(dl), intent(in) :: a
+        real(dl) :: grho_de
+        integer :: idx
+        real(dl) :: a1, a2, w1, w2, log_rho, extra_integral
+        
+        if (a == 0.0_dl) then
+            grho_de = 0.0_dl
+            return
+        end if
+        
+        if (a >= 1.0_dl) then
+            grho_de = 1.0_dl
+            return
+        end if
+        
+        if (.not. this%initialized) then
+            grho_de = 1.0_dl
+            return
+        end if
+        
+        call this%ComputeDensityCache()
+        call this%FindSegment(a, idx, a1, a2, w1, w2)
+        
+        if (idx == this%n_w) then
+            ! Constant extrapolation beyond last knot
+            log_rho = this%knot_log_density(this%n_w) + &
+                     (1.0_dl - 3.0_dl * this%full_w(this%n_w)) * log(a / this%full_a(this%n_w))
+        else
+            ! Linear interpolation within segment
+            call this%IntegrateSegment(a1, a, w1, w1 + (w2-w1)*(a-a1)/(a2-a1), extra_integral)
+            log_rho = this%knot_log_density(idx) + extra_integral
+        end if
+        
+        grho_de = exp(log_rho)
+        
+    end function FlexKnot_grho_de
+    
+    subroutine FlexKnot_PrintFeedback(this, FeedbackLevel)
+        class(TDarkEnergyFlexKnot) :: this
+        integer, intent(in) :: FeedbackLevel
+        integer :: i
+        
+        if (FeedbackLevel > 0 .and. this%initialized) then
+            write(*,'("FlexKnot Dark Energy:")')
+            write(*,'("  w-values: ",20F8.4)') this%w_values
+            if (this%n_w > 2) then
+                write(*,'("  a-knots:  ",20F8.4)') this%a_knots
+            end if
+            write(*,'("  Full knots:")')
+            do i = 1, this%n_w
+                write(*,'("    (",F8.5,", ",F8.4,")")') this%full_a(i), this%full_w(i)
+            end do
+        end if
+        
+    end subroutine FlexKnot_PrintFeedback
+    
+    end module DarkEnergyFlexKnot
