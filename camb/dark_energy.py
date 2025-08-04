@@ -320,11 +320,47 @@ class DarkEnergyFK(DarkEnergyModel):
 
         return self
 
-    def set_params(self, w_values, a_knots=None):
+    def set_params(
+        self, w0,
+        a1=None, w1=None,
+        a2=None, w2=None,
+        a3=None, w3=None,
+        a4=None, w4=None,
+        a5=None, w5=None,
+        a6=None, w6=None,
+        a7=None, w7=None,
+        a8=None, w8=None,
+        a9=None, w9=None,
+        a10=None, w10=None,
+        a11=None, w11=None,
+        a12=None, w12=None,
+        a13=None, w13=None,
+        a14=None, w14=None,
+        a15=None, w15=None,
+        a16=None, w16=None,
+        a17=None, w17=None,
+        a18=None, w18=None,
+        a19=None, w19=None,
+        a20=None, w20=None,
+        a21=None, w21=None,
+        a22=None, w22=None,
+        a23=None, w23=None,
+        wn=None,
+    ):
         """
         Convenience method that calls set_flexknots.
         Provided for consistency with other dark energy classes.
         """
+        args = locals()
+        w_values = np.array([
+            args[f'w{i}'] for i in range(24) if args[f'w{i}'] is not None
+        ], dtype=np.float64)
+        if wn is not None:
+            w_values = np.concatenate([w_values, [wn]])
+
+        a_knots = np.array([
+            args[f'a{i}'] for i in range(1, 24) if args[f'a{i}'] is not None
+        ], dtype=np.float64)
         return self.set_flexknots(w_values, a_knots)
 
     def __getstate__(self):
