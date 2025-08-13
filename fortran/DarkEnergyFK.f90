@@ -6,7 +6,7 @@
 
     private
 
-    type, extends(TDarkEnergyModel) :: TDarkEnergyFK
+    type, extends(TDarkEnergyEqnOfState) :: TDarkEnergyFK
         integer :: n_w = 1                           ! Number of w-values
         real(dl), allocatable :: w_knots(:)         ! [w0, w1, ..., w_{n-1}]
         real(dl), allocatable :: a_knots(:)          ! [a1, a2, ..., a_{n-2}]
@@ -15,16 +15,23 @@
         real(dl), allocatable :: full_a(:), full_w(:)
         real(dl), allocatable :: knot_log_density(:)
         logical :: initialized = .false.
+        real(dl) :: c_Gamma_ppf = 0.4_dl  ! PPF anisotropy parameter
     contains
+        ! Public DE methods we must override
         procedure :: ReadParams => TDarkEnergyFK_ReadParams
+        procedure, nopass :: PythonClass => TDarkEnergyFK_PythonClass
         procedure :: Init => TDarkEnergyFK_Init
+        ! TODO:
+        procedure :: PerturbedStressEnergy => TDarkEnergyFK_PerturbedStressEnergy
+        ! NOTE: diff_rhopi_Add_Term is inherited from TDarkEnergyEqnOfState
+        ! end todo
         procedure :: w_de => TDarkEnergyFK_w_de
         procedure :: grho_de => TDarkEnergyFK_grho_de
         procedure :: Effective_w_wa => TDarkEnergyFK_Effective_w_wa
         procedure :: PrintFeedback => TDarkEnergyFK_PrintFeedback
         procedure :: SetFlexKnots => TDarkEnergyFK_SetFlexKnots
-        procedure, nopass :: PythonClass => TDarkEnergyFK_PythonClass
         procedure, nopass :: SelfPointer => TDarkEnergyFK_SelfPointer
+        ! Flexknot-specific methods
         procedure, private :: BuildFullKnots
         procedure, private :: FindSegment
         procedure, private :: ComputeDensityCache
@@ -38,7 +45,9 @@
         use IniObjects
         class(TDarkEnergyFK) :: this
         class(TIniFile), intent(in) :: Ini
-        ! Implementation for reading from .ini files can be added here
+        call this%TDarkEnergyEqnOfState%ReadParams(Ini)
+        ! TODO: Implementation for reading from .ini files can be added here
+        error stop 'FlexKnot INI parameters not yet implemented - use Python interface'
 
     end subroutine TDarkEnergyFK_ReadParams
 
@@ -57,8 +66,11 @@
     end subroutine TDarkEnergyFK_SelfPointer
 
     subroutine TDarkEnergyFK_Init(this, State)
+        use classes
+        use config  ! TODO: why?
         class(TDarkEnergyFK), intent(inout) :: this
         class(TCAMBdata), intent(in), target :: State
+        call this%TDarkEnergyEqnOfState%Init(State)
 
         if (.not. this%initialized) then
             ! Default: cosmological constant
@@ -329,5 +341,54 @@
         end if
 
     end subroutine TDarkEnergyFK_PrintFeedback
+
+    subroutine TDarkEnergyFK_PerturbedStressEnergy(this, dgrhoe, dgqe, &
+        a, dgq, dgrho, grho, grhov_t, w, gpres_noDE, etak, adotoa, k, kf1, ay, ayprime, w_ix)
+    class(TDarkEnergyFK), intent(inout) :: this
+    real(dl), intent(out) :: dgrhoe, dgqe
+    real(dl), intent(in) ::  a, dgq, dgrho, grho, grhov_t, w, gpres_noDE, etak, adotoa, k, kf1
+    real(dl), intent(in) :: ay(*)
+    real(dl), intent(inout) :: ayprime(*)
+    integer, intent(in) :: w_ix
+    real(dl) :: Gamma, S_Gamma, ckH, Gammadot, Fa, sigma
+    real(dl) :: vT, grhoT, k2
+
+    if (this%no_perturbations) then
+        dgrhoe=0
+        dgqe=0
+        return
+    end if
+
+    k2=k**2
+    !ppf
+    grhoT = grho - grhov_t
+    vT = dgq / (grhoT + gpres_noDE)
+    Gamma = ay(w_ix)
+
+    !sigma for ppf
+    sigma = (etak + (dgrho + 3 * adotoa / k * dgq) / 2._dl / k) / kf1 - &
+        k * Gamma
+    sigma = sigma / adotoa
+
+    S_Gamma = grhov_t * (1 + w) * (vT + sigma) * k / adotoa / 2._dl / k2
+    ckH = this%c_Gamma_ppf * k / adotoa
+
+    if (ckH * ckH > 1000) then
+        ! Was ckH^2 > 30 originally, but this is better behaved (closer to fluid)
+        ! for some extreme models (thanks Yanhui Yang, Simeon Bird 2024)
+        Gamma = 0
+        Gammadot = 0.d0
+    else
+        Gammadot = S_Gamma / (1 + ckH * ckH) - Gamma - ckH * ckH * Gamma
+        Gammadot = Gammadot * adotoa
+    endif
+    ayprime(w_ix) = Gammadot !Set this here, and don't use PerturbationEvolve
+
+    Fa = 1 + 3 * (grhoT + gpres_noDE) / 2._dl / k2 / kf1
+    dgqe = S_Gamma - Gammadot / adotoa - Gamma
+    dgqe = -dgqe / Fa * 2._dl * k * adotoa + vT * grhov_t * (1 + w)
+    dgrhoe = -2 * k2 * kf1 * Gamma - 3 / k * adotoa * dgqe
+
+    end subroutine TDarkEnergyFK_PerturbedStressEnergy
 
     end module DarkEnergyFK
