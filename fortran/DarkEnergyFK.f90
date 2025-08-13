@@ -292,7 +292,7 @@
         
         call this%FindSegment(a, idx, al, ar, wl, wr)
 
-        call this%IntegrateSegment(al, a, wl, wr, integral, a)
+        call this%IntegrateSegment(al, ar, wl, wr, integral, a)
         integral = integral + this%knot_integral(idx)
     end subroutine IntegrateFK
 
