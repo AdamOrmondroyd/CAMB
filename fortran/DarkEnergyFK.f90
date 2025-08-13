@@ -13,7 +13,7 @@
         real(dl) :: a_min = 1.0e-3_dl                ! Minimum scale factor
         ! Internal full knot arrays (computed from inputs)
         real(dl), allocatable :: full_a(:), full_w(:)
-        real(dl), allocatable :: knot_log_density(:)
+        real(dl), allocatable :: knot_integral(:)
         logical :: initialized = .false.
         real(dl) :: c_Gamma_ppf = 0.4_dl  ! PPF anisotropy parameter
     contains
@@ -35,8 +35,9 @@
         ! Flexknot-specific methods
         procedure, private :: BuildFullKnots
         procedure, private :: FindSegment
-        procedure, private :: ComputeDensityCache
+        procedure, private :: ComputeIntegralCache
         procedure, private :: IntegrateSegment
+        procedure, private :: IntegrateFK
     end type TDarkEnergyFK
 
     public TDarkEnergyFK
@@ -122,7 +123,7 @@
         end if
 
         call this%BuildFullKnots()
-        call this%ComputeDensityCache()
+        call this%ComputeIntegralCache()
         this%is_cosmological_constant = (n_w == 1 .and. abs(w_knots(1) + 1.0_dl) < 1e-6_dl)
         this%initialized = .true.
 
@@ -135,10 +136,10 @@
         ! Allocate full knot arrays
         if (allocated(this%full_a)) deallocate(this%full_a)
         if (allocated(this%full_w)) deallocate(this%full_w)
-        if (allocated(this%knot_log_density)) deallocate(this%knot_log_density)
+        if (allocated(this%knot_integral)) deallocate(this%knot_integral)
 
         allocate(this%full_a(this%n_w), this%full_w(this%n_w))
-        allocate(this%knot_log_density(this%n_w))
+        allocate(this%knot_integral(this%n_w))
 
         ! Build full knot arrays
         this%full_a(1) = 1.0_dl                    ! Today
@@ -157,33 +158,33 @@
 
     end subroutine BuildFullKnots
 
-    subroutine FindSegment(this, a, idx, a1, a2, w1, w2)
+    subroutine FindSegment(this, a, idx, a_left, a_right, w_left, w_right)
         class(TDarkEnergyFK), intent(in) :: this
         real(dl), intent(in) :: a
         integer, intent(out) :: idx
-        real(dl), intent(out) :: a1, a2, w1, w2
+        real(dl), intent(out) :: a_left, a_right, w_left, w_right
         integer :: i
 
         ! Find segment (full_a is in decreasing order)
-        idx = this%n_w  ! Default to last segment
-        do i = 1, this%n_w - 1
-            if (a >= this%full_a(i+1)) then
+        idx = this%n_w+1  ! Default to below amin
+        do i = this%n_w, 1, -1
+            if (a < this%full_a(i)) then
                 idx = i
                 exit
             end if
         end do
 
-        if (idx == this%n_w) then
+        if (idx == this%n_w+1) then
             ! Extrapolate with constant w at early times
-            a1 = this%full_a(this%n_w)
-            a2 = this%full_a(this%n_w)
-            w1 = this%full_w(this%n_w)
-            w2 = this%full_w(this%n_w)
+            a_left = this%full_a(this%n_w)
+            a_right = this%full_a(this%n_w)
+            w_left = this%full_w(this%n_w)
+            w_right = this%full_w(this%n_w)
         else
-            a1 = this%full_a(idx)
-            a2 = this%full_a(idx+1)
-            w1 = this%full_w(idx)
-            w2 = this%full_w(idx+1)
+            a_left = this%full_a(idx+1)
+            a_right = this%full_a(idx)
+            w_left = this%full_w(idx+1)
+            w_right = this%full_w(idx)
         end if
 
     end subroutine FindSegment
@@ -237,58 +238,71 @@
 
     end subroutine TDarkEnergyFK_Effective_w_wa
 
-    subroutine IntegrateSegment(this, a_start, a_end, w_start, w_end, integral)
+    subroutine IntegrateSegment(this, a_left, a_right, w_left, w_right, integral, a)
         class(TDarkEnergyFK), intent(in) :: this
-        real(dl), intent(in) :: a_start, a_end, w_start, w_end
+        real(dl), intent(in) :: a_left, a_right, w_left, w_right
+        real(dl), optional, intent(in) :: a  ! if present integrate from a to a_right
         real(dl), intent(out) :: integral
-        real(dl) :: slope, log_ratio
+        real(dl) :: slope, intercept, log_ratio, a_lower
 
-        if (abs(a_end - a_start) < 1e-15_dl) then
+        if (abs(a_right - a_left) < 1e-15_dl) then
             integral = 0.0_dl
             return
         end if
 
-        slope = (w_end - w_start) / (a_end - a_start)
-        log_ratio = log(a_end / a_start)
+        if (present(a)) then
+            a_lower = a
+        else
+            a_lower = a_left
+        end if
+            
 
-        ! Analytical integral of -3 * ∫[(1+w(a))/a] da
-        ! where w(a) = w_start + slope*(a - a_start)
-        integral = -3.0_dl * ((1.0_dl + w_start) * log_ratio + &
-                             slope * (a_end - a_start - a_start * log_ratio))
+        slope = (w_right - w_left) / (a_right - a_left)
+        intercept = w_right - slope * a_right
+        log_ratio = log(a_right / a_lower)
+        integral = (1.0_dl + intercept) * log_ratio + slope * (a_right - a_lower)
 
     end subroutine IntegrateSegment
 
-    subroutine ComputeDensityCache(this)
+    subroutine ComputeIntegralCache(this)
         class(TDarkEnergyFK), intent(inout) :: this
         integer :: i
         real(dl) :: integral
 
-        ! Compute log(a^4 * rho_de / rho_de(a=1)) at each knot
-        ! Following the pattern from TDarkEnergyEqnOfState_SetwTable
-        
-        ! The reference formula is: ln(a^4) - 3*int[1 to a] (1+w) d ln a
-        ! For our piecewise linear w(a), integrate segment by segment
-        
-        this%knot_log_density(1) = 0.0_dl  ! At a=1, this is 0 by definition
+        this%knot_integral(1) = 0.0_dl  ! At a=1, this is 0 by definition
         
         do i = 2, this%n_w
-            ! Integrate this segment from full_a(i-1) to full_a(i)
-            call this%IntegrateSegment(this%full_a(i-1), this%full_a(i), &
-                                      this%full_w(i-1), this%full_w(i), integral)
+            ! Integrate this segment from full_a(i) to full_a(i-1)
+            ! Remember knots go from right to left
+            call this%IntegrateSegment(this%full_a(i), this%full_a(i-1), &
+                                       this%full_w(i), this%full_w(i-1), integral)
             
-            ! Accumulate: log(a^4 rho_de(a_i)) relative to log(a^4 rho_de(a=1))
-            this%knot_log_density(i) = this%knot_log_density(i-1) + integral + &
-                                       4.0_dl * log(this%full_a(i) / this%full_a(i-1))
+            this%knot_integral(i) = this%knot_integral(i-1) + integral
         end do
 
-    end subroutine ComputeDensityCache
+    end subroutine ComputeIntegralCache
+
+    subroutine IntegrateFK(this, a, integral)
+        ! ∫_a^1 (1+w)/a da
+        class(TDarkEnergyFK), intent(in) :: this
+        real(dl), intent(in) :: a
+        real(dl), intent(out) :: integral
+        integer :: idx
+        real(dl) :: al, ar, wl, wr
+        
+        call this%FindSegment(a, idx, al, ar, wl, wr)
+
+        call this%IntegrateSegment(al, a, wl, wr, integral, a)
+        integral = integral + this%knot_integral(idx)
+    end subroutine IntegrateFK
 
     function TDarkEnergyFK_grho_de(this, a) result(grho_de)  !relative density (8 pi G a^4 rho_de /grhov)
+        ! a^4 exp(3*∫_0^z (1+w)/(1+z) dz = a^4 exp(3*∫_a^1 (1+w)/a da)
         class(TDarkEnergyFK) :: this
         real(dl), intent(in) :: a
         real(dl) :: grho_de
         integer :: idx
-        real(dl) :: a1, a2, w1, w2, log_rho, extra_integral, w_at_a
+        real(dl) :: a1, a2, w1, w2, exponent
 
         if (a == 0.0_dl) then
             grho_de = 0.0_dl
@@ -305,22 +319,10 @@
             return
         end if
 
-        call this%FindSegment(a, idx, a1, a2, w1, w2)
 
-        if (idx == this%n_w) then
-            ! Constant extrapolation beyond last knot
-            ! ln(a^4 rho) = ln(a_knot^4 rho_knot) + [4 - 3(1+w)] * ln(a/a_knot)
-            log_rho = this%knot_log_density(this%n_w) + &
-                     (4.0_dl - 3.0_dl * (1.0_dl + this%full_w(this%n_w))) * log(a / this%full_a(this%n_w))
-        else
-            ! Linear interpolation within segment
-            w_at_a = w1 + (w2-w1)*(a-a1)/(a2-a1)
-            call this%IntegrateSegment(a1, a, w1, w_at_a, extra_integral)
-            log_rho = this%knot_log_density(idx) + extra_integral + &
-                     4.0_dl * log(a / a1)
-        end if
-
-        grho_de = exp(log_rho)
+        call this%IntegrateFK(a, exponent)
+        exponent = 3.0_dl * exponent + 4.0_dl * log(a)
+        grho_de = exp(exponent)
 
     end function TDarkEnergyFK_grho_de
 
