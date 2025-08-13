@@ -227,7 +227,7 @@ class DarkEnergyFK(DarkEnergyModel):
 
     This model parameterizes w(a) as piecewise linear segments (flexknots) between
     specified knot points. The parameterization uses:
-        w_values = [w₀, w₁, ..., w_{n-1}]  (n values)
+        w_knots = [w₀, w₁, ..., w_{n-1}]  (n values)
         a_knots = [a₁, a₂, ..., a_{n-2}]   (n-2 values)
 
     Creating knots at: (1.0, w₀), (a₁, w₁), ..., (a_{n-2}, w_{n-2}), (a_min, w_{n-1})
@@ -248,13 +248,13 @@ class DarkEnergyFK(DarkEnergyModel):
 
     _methods_ = [('SetFlexKnots', [POINTER(c_int), numpy_1d, numpy_1d])]
 
-    def set_flexknots(self, w_values, a_knots=None):
+    def set_flexknots(self, w_knots, a_knots=None):
         """
         Set flexknot parameterization for w(a).
 
         Parameters:
         -----------
-        w_values : array_like
+        w_knots : array_like
             Array of w-values [w₀, w₁, ..., w_{n-1}] where:
             - w₀ is w(a=1) today
             - w_{n-1} is w(a→0) in early universe
@@ -262,7 +262,7 @@ class DarkEnergyFK(DarkEnergyModel):
         a_knots : array_like, optional
             Array of interior knot positions [a₁, a₂, ..., a_{n-2}].
             Must be in decreasing order and in range (a_min, 1.0).
-            If None and len(w_values) > 1, creates logarithmically spaced knots.
+            If None and len(w_knots) > 1, creates logarithmically spaced knots.
 
         Returns:
         --------
@@ -283,8 +283,8 @@ class DarkEnergyFK(DarkEnergyModel):
         a_knots = [0.7, 0.3]  # Creates knots at (1.0,-0.9), (0.7,-1.1), (0.3,-0.8), (a_min,-0.6)
         de.set_flexknots(w_vals, a_knots)
         """
-        w_values = np.ascontiguousarray(w_values, dtype=np.float64)
-        n_w = len(w_values)
+        w_knots = np.ascontiguousarray(w_knots, dtype=np.float64)
+        n_w = len(w_knots)
 
         if n_w == 1:
             # Cosmological constant case
@@ -302,7 +302,7 @@ class DarkEnergyFK(DarkEnergyModel):
             else:
                 a_knots = np.asarray(a_knots, dtype=np.float64)
                 if len(a_knots) != n_w - 2:
-                    raise ValueError(f"Expected {n_w-2} a_knots for {n_w} w_values, got {len(a_knots)}")
+                    raise ValueError(f"Expected {n_w-2} a_knots for {n_w} w_knots, got {len(a_knots)}")
 
                 # Validate knots are in decreasing order
                 if n_w > 2 and not np.all(a_knots[:-1] > a_knots[1:]):
@@ -316,7 +316,7 @@ class DarkEnergyFK(DarkEnergyModel):
                 a_knots_array = np.ascontiguousarray(a_knots, dtype=np.float64)
 
         # Call Fortran subroutine
-        self.f_SetFlexKnots(byref(c_int(n_w)), w_values, a_knots_array)
+        self.f_SetFlexKnots(byref(c_int(n_w)), w_knots, a_knots_array)
 
         return self
 
@@ -352,16 +352,16 @@ class DarkEnergyFK(DarkEnergyModel):
         Provided for consistency with other dark energy classes.
         """
         args = locals()
-        w_values = np.array([
+        w_knots = np.array([
             args[f'w{i}'] for i in range(24) if args[f'w{i}'] is not None
         ], dtype=np.float64)
         if wn is not None:
-            w_values = np.concatenate([w_values, [wn]])
+            w_knots = np.concatenate([w_knots, [wn]])
 
         a_knots = np.array([
             args[f'a{i}'] for i in range(1, 24) if args[f'a{i}'] is not None
         ], dtype=np.float64)
-        return self.set_flexknots(w_values, a_knots)
+        return self.set_flexknots(w_knots, a_knots)
 
     def __getstate__(self):
         # FlexKnot can be pickled since it doesn't use splines

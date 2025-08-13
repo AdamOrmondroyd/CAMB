@@ -8,7 +8,7 @@
 
     type, extends(TDarkEnergyModel) :: TDarkEnergyFK
         integer :: n_w = 1                           ! Number of w-values
-        real(dl), allocatable :: w_values(:)         ! [w0, w1, ..., w_{n-1}]
+        real(dl), allocatable :: w_knots(:)         ! [w0, w1, ..., w_{n-1}]
         real(dl), allocatable :: a_knots(:)          ! [a1, a2, ..., a_{n-2}]
         real(dl) :: a_min = 1.0e-8_dl                ! Minimum scale factor
         ! Internal full knot arrays (computed from inputs)
@@ -67,10 +67,10 @@
 
     end subroutine TDarkEnergyFK_Init
 
-    subroutine TDarkEnergyFK_SetFlexKnots(this, n_w, w_values, a_knots)
+    subroutine TDarkEnergyFK_SetFlexKnots(this, n_w, w_knots, a_knots)
         class(TDarkEnergyFK), intent(inout) :: this
         integer, intent(in) :: n_w
-        real(dl), intent(in) :: w_values(n_w)
+        real(dl), intent(in) :: w_knots(n_w)
         real(dl), intent(in) :: a_knots(*)  ! Assumed size to handle n_w=1 case
         integer :: i
 
@@ -82,11 +82,11 @@
         this%n_w = n_w
 
         ! Allocate arrays safely
-        if (allocated(this%w_values)) deallocate(this%w_values)
+        if (allocated(this%w_knots)) deallocate(this%w_knots)
         if (allocated(this%a_knots)) deallocate(this%a_knots)
 
-        allocate(this%w_values(n_w))
-        this%w_values = w_values
+        allocate(this%w_knots(n_w))
+        this%w_knots = w_knots
 
         if (n_w > 2) then
             allocate(this%a_knots(n_w-2))
@@ -109,7 +109,7 @@
         end if
 
         call this%BuildFullKnots()
-        this%is_cosmological_constant = (n_w == 1 .and. abs(w_values(1) + 1.0_dl) < 1e-6_dl)
+        this%is_cosmological_constant = (n_w == 1 .and. abs(w_knots(1) + 1.0_dl) < 1e-6_dl)
         this%initialized = .true.
 
     end subroutine TDarkEnergyFK_SetFlexKnots
@@ -128,18 +128,18 @@
 
         ! Build full knot arrays
         this%full_a(1) = 1.0_dl                    ! Today
-        this%full_w(1) = this%w_values(1)          ! w0
+        this%full_w(1) = this%w_knots(1)          ! w0
 
         if (this%n_w > 2) then
             ! Interior knots
             do i = 1, this%n_w-2
                 this%full_a(i+1) = this%a_knots(i)
-                this%full_w(i+1) = this%w_values(i+1)
+                this%full_w(i+1) = this%w_knots(i+1)
             end do
         end if
 
         this%full_a(this%n_w) = this%a_min         ! Early time
-        this%full_w(this%n_w) = this%w_values(this%n_w)  ! w_{n-1}
+        this%full_w(this%n_w) = this%w_knots(this%n_w)  ! w_{n-1}
 
     end subroutine BuildFullKnots
 
@@ -318,7 +318,7 @@
 
         if (FeedbackLevel > 0 .and. this%initialized) then
             write(*,'("FlexKnot Dark Energy:")')
-            write(*,'("  w-values: ",20F8.4)') this%w_values
+            write(*,'("  w-values: ",20F8.4)') this%w_knots
             if (this%n_w > 2) then
                 write(*,'("  a-knots:  ",20F8.4)') this%a_knots
             end if
