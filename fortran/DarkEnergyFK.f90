@@ -6,11 +6,11 @@
 
     private
 
-    type, extends(TDarkEnergyEqnOfState) :: TDarkEnergyFK
+    type, extends(TDarkEnergyModel) :: TDarkEnergyFK
         integer :: n_w = 1                           ! Number of w-values
         real(dl), allocatable :: w_knots(:)         ! [w0, w1, ..., w_{n-1}]
         real(dl), allocatable :: a_knots(:)          ! [a1, a2, ..., a_{n-2}]
-        real(dl) :: a_min = 1.0e-8_dl                ! Minimum scale factor
+        real(dl) :: a_min = 1.0e-3_dl                ! Minimum scale factor
         ! Internal full knot arrays (computed from inputs)
         real(dl), allocatable :: full_a(:), full_w(:)
         real(dl), allocatable :: knot_log_density(:)
@@ -18,8 +18,10 @@
         real(dl) :: c_Gamma_ppf = 0.4_dl  ! PPF anisotropy parameter
     contains
         ! Public DE methods we must override
+        ! NOTE: copying TAxionEffectiveFluid
         procedure :: ReadParams => TDarkEnergyFK_ReadParams
         procedure, nopass :: PythonClass => TDarkEnergyFK_PythonClass
+        procedure, nopass :: SelfPointer => TDarkEnergyFK_SelfPointer
         procedure :: Init => TDarkEnergyFK_Init
         ! TODO:
         procedure :: PerturbedStressEnergy => TDarkEnergyFK_PerturbedStressEnergy
@@ -30,7 +32,6 @@
         procedure :: Effective_w_wa => TDarkEnergyFK_Effective_w_wa
         procedure :: PrintFeedback => TDarkEnergyFK_PrintFeedback
         procedure :: SetFlexKnots => TDarkEnergyFK_SetFlexKnots
-        procedure, nopass :: SelfPointer => TDarkEnergyFK_SelfPointer
         ! Flexknot-specific methods
         procedure, private :: BuildFullKnots
         procedure, private :: FindSegment
@@ -45,7 +46,7 @@
         use IniObjects
         class(TDarkEnergyFK) :: this
         class(TIniFile), intent(in) :: Ini
-        call this%TDarkEnergyEqnOfState%ReadParams(Ini)
+        call this%TDarkEnergyModel%ReadParams(Ini)
         ! TODO: Implementation for reading from .ini files can be added here
         error stop 'FlexKnot INI parameters not yet implemented - use Python interface'
 
@@ -70,13 +71,13 @@
         use config  ! TODO: why?
         class(TDarkEnergyFK), intent(inout) :: this
         class(TCAMBdata), intent(in), target :: State
-        call this%TDarkEnergyEqnOfState%Init(State)
+        call this%TDarkEnergyModel%Init(State)
 
-        if (.not. this%initialized) then
-            ! Default: cosmological constant
-            call this%SetFlexKnots(1, [-1.0_dl], [0.0_dl])
-        end if
-
+        if (this%is_cosmological_constant) then
+            this%num_perturb_equations = 0
+        else
+            this%num_perturb_equations = 1  ! PPF-style
+      end if
     end subroutine TDarkEnergyFK_Init
 
     subroutine TDarkEnergyFK_SetFlexKnots(this, n_w, w_knots, a_knots)
@@ -121,6 +122,7 @@
         end if
 
         call this%BuildFullKnots()
+        call this%ComputeDensityCache()
         this%is_cosmological_constant = (n_w == 1 .and. abs(w_knots(1) + 1.0_dl) < 1e-6_dl)
         this%initialized = .true.
 
@@ -303,7 +305,6 @@
             return
         end if
 
-        call this%ComputeDensityCache()
         call this%FindSegment(a, idx, a1, a2, w1, w2)
 
         if (idx == this%n_w) then
@@ -352,12 +353,6 @@
     integer, intent(in) :: w_ix
     real(dl) :: Gamma, S_Gamma, ckH, Gammadot, Fa, sigma
     real(dl) :: vT, grhoT, k2
-
-    if (this%no_perturbations) then
-        dgrhoe=0
-        dgqe=0
-        return
-    end if
 
     k2=k**2
     !ppf
